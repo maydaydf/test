@@ -536,15 +536,32 @@
 <div class="toast" id="toast"></div>
 
 <script>
+const BIN_ID = "69d9137236566621a89be5ff";
+const API_KEY = "$2a$10$Z7nDy1SpmlVdOb9VexnwUOefK.3PImpJRmaKiimjXoITK3T8Uyvr.";
+
+const BASE_URL = `https://api.jsonbin.io/v3/b/${BIN_ID}`;
 const BASE_URL = window.location.href.split('?')[0];
 
 // ---- STORAGE ----
-async function storageGet(key) {
-  try { const r = await window.storage.get(key); return r ? JSON.parse(r.value) : null; } catch { return null; }
+function storageGet(key) {
+  try {
+    const data = localStorage.getItem(key);
+    return data ? JSON.parse(data) : null;
+  } catch {
+    return null;
+  }
 }
-async function storageSet(key, val) {
-  try { await window.storage.set(key, JSON.stringify(val)); } catch(e) { console.error(e); }
+
+function storageSet(key, val) {
+  try {
+    localStorage.setItem(key, JSON.stringify(val));
+  } catch (e) {
+    console.error(e);
+  }
 }
+
+await loadData();
+renderProduction();  
 
 // ---- STATE ----
 let products = [];
@@ -554,11 +571,31 @@ let editingProductId = null;
 let currentQRProduct = null;
 
 async function loadData() {
-  products = (await storageGet('kanban-products')) || [];
-  alerts = (await storageGet('kanban-alerts')) || [];
+  const res = await fetch(BASE_URL, {
+    headers: { "X-Master-Key": API_KEY }
+  });
+  const json = await res.json();
+
+  products = json.record.products || [];
+  alerts = json.record.alerts || [];
 }
-async function saveProducts() { await storageSet('kanban-products', products); }
-async function saveAlerts() { await storageSet('kanban-alerts', alerts); }
+
+async function saveAll() {
+  await fetch(BASE_URL, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Master-Key": API_KEY
+    },
+    body: JSON.stringify({
+      products,
+      alerts
+    })
+  });
+}
+  
+function saveProducts() { storageSet('kanban-products', products); }
+function saveAlerts() { storageSet('kanban-alerts', alerts); }
 
 // ---- ROUTING ----
 function getParam(k) { return new URLSearchParams(window.location.search).get(k); }
@@ -614,7 +651,7 @@ async function showScanView(sku) {
     status: 'pending'
   };
   alerts.unshift(alert);
-  await saveAlerts();
+  await saveAll();
 
   const dateStr = now.toLocaleDateString('pl-PL', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' });
 
@@ -700,25 +737,25 @@ function filterAlerts(filter, btn) {
 
 async function markDone(id) {
   const a = alerts.find(x => x.id === id);
-  if (a) { a.status = 'done'; await saveAlerts(); renderProduction(); toast('Alert oznaczony jako zrealizowany', 'success'); }
+  if (a) { a.status = 'done'; await saveAll(); renderProduction(); toast('Alert oznaczony jako zrealizowany', 'success'); }
 }
 async function markPending(id) {
   const a = alerts.find(x => x.id === id);
-  if (a) { a.status = 'pending'; await saveAlerts(); renderProduction(); }
+  if (a) { a.status = 'pending'; await saveAll(); renderProduction(); }
 }
 async function deleteAlert(id) {
   alerts = alerts.filter(x => x.id !== id);
-  await saveAlerts(); renderProduction();
+  await saveAll(); renderProduction();
 }
 async function clearDoneAlerts() {
   if (!confirm('Usunąć wszystkie zrealizowane alerty?')) return;
   alerts = alerts.filter(a => a.status !== 'done');
-  await saveAlerts(); renderProduction();
+  await saveAll(); renderProduction();
 }
 async function clearAllAlerts() {
   if (!confirm('Usunąć WSZYSTKIE alerty? Tej operacji nie można cofnąć.')) return;
   alerts = [];
-  await saveAlerts(); renderProduction();
+  await saveAll(); renderProduction();
 }
 
 // ---- PRODUCTS ----
@@ -784,7 +821,7 @@ async function saveProduct() {
     products.push({ id: Date.now().toString(), name, sku, qty, unit, category, note });
     toast('Produkt dodany', 'success');
   }
-  await saveProducts();
+  await saveAll();
   clearProductForm();
   renderProductGrid();
   renderQRGrid();
@@ -794,7 +831,7 @@ async function deleteProduct(id) {
   const p = products.find(x => x.id === id);
   if (!confirm(`Usunąć produkt "${p?.name}"?`)) return;
   products = products.filter(x => x.id !== id);
-  await saveProducts();
+  await saveAll();
   renderProductGrid();
   renderQRGrid();
 }
